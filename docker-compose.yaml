@@ -12,6 +12,11 @@ services:
       - postgres-keycloak-data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak_user -d keycloak_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   keycloak:
     image: quay.io/keycloak/keycloak:21.1
@@ -22,6 +27,8 @@ services:
       KC_DB_URL: jdbc:postgresql://keycloak_db:5432/keycloak_db
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: keycloak_password
+      KC_HOSTNAME_URL: http://localhost:8080
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
     command:
       - start-dev
       - --import-realm
@@ -30,8 +37,11 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - keycloak_db
-      - openldap
+      keycloak_db:
+        condition: service_healthy
+      openldap:
+        condition: service_started
+    restart: on-failure
 
   openldap:
     image: osixia/openldap:1.5.0
@@ -99,6 +109,11 @@ services:
       -c wal_level=logical
       -c max_replication_slots=4
       -c max_wal_senders=4
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm_user -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # ============================================================
   # OLAP (ClickHouse)
@@ -153,6 +168,11 @@ services:
       POSTGRES_PASSWORD: airflow
     volumes:
       - airflow-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   airflow-webserver:
     build:
@@ -177,21 +197,13 @@ services:
     ports:
       - "8082:8080"
     depends_on:
-      - airflow-postgres
-      - crm-db
-      - clickhouse
-    command: >
-      bash -c "
-        airflow db init &&
-        airflow users create
-          --username admin
-          --password admin
-          --firstname Admin
-          --lastname Admin
-          --role Admin
-          --email admin@example.com || true &&
-        airflow webserver
-      "
+      airflow-postgres:
+        condition: service_healthy
+      crm-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+    command: bash -c "airflow db migrate && (airflow users delete --username admin 2>/dev/null || true) && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com && airflow webserver"
 
   airflow-scheduler:
     build:
@@ -214,7 +226,8 @@ services:
       - ./airflow/dags:/opt/airflow/dags
     depends_on:
       - airflow-webserver
-    command: airflow scheduler
+    restart: on-failure
+    command: bash -c "sleep 15 && airflow db migrate && airflow scheduler"
 
   # ============================================================
   # Object Storage (S3 / MinIO)

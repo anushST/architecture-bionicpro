@@ -1,7 +1,9 @@
 import hashlib
 import base64
+import json as json_mod
 import secrets
 import time
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -141,7 +143,7 @@ async def login():
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     return RedirectResponse(url=f"{settings.authorization_url}?{query}")
 
 
@@ -197,20 +199,23 @@ async def me(request: Request):
 
     user_info = resp.json()
 
-    # Session rotation (prevents session fixation)
-    new_session_id = session_mgr.rotate_session(session_id)
-    if not new_session_id:
-        # Rotation failed (session disappeared mid-request) — force re-auth
-        raise HTTPException(status_code=401, detail="Session lost during rotation")
+    # Extract roles from JWT (realm_access is in the token, not in userinfo)
+    roles = []
+    try:
+        payload_b64 = access_token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        jwt_claims = json_mod.loads(base64.urlsafe_b64decode(payload_b64))
+        roles = jwt_claims.get("realm_access", {}).get("roles", [])
+    except Exception:
+        pass
 
     response = JSONResponse(content={
         "sub": user_info.get("sub"),
         "username": user_info.get("preferred_username"),
         "email": user_info.get("email"),
         "name": user_info.get("name"),
-        "roles": user_info.get("realm_access", {}).get("roles", []),
+        "roles": roles,
     })
-    _set_session_cookie(response, new_session_id)
     return response
 
 

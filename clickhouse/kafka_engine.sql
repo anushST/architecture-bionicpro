@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS bionicpro.kafka_orders (
 SETTINGS
     kafka_broker_list = 'kafka:29092',
     kafka_topic_list = 'crm.public.orders',
-    kafka_group_name = 'clickhouse_orders',
+    kafka_group_name = 'clickhouse_orders_v2',
     kafka_format = 'JSONAsString',
     kafka_num_consumers = 1;
 

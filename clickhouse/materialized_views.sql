@@ -16,13 +16,14 @@ FROM bionicpro.kafka_customers
 WHERE JSONExtractRaw(payload, 'after') != 'null';
 
 -- MV: kafka_orders -> orders
+-- Note: Debezium sends date fields as epoch days (Int32) from PostgreSQL DATE type
 CREATE MATERIALIZED VIEW IF NOT EXISTS bionicpro.mv_orders TO bionicpro.orders AS
 SELECT
     JSONExtractInt(JSONExtractRaw(payload, 'after'), 'id') AS id,
     JSONExtractInt(JSONExtractRaw(payload, 'after'), 'customer_id') AS customer_id,
     JSONExtractString(JSONExtractRaw(payload, 'after'), 'product_name') AS product_name,
     JSONExtractString(JSONExtractRaw(payload, 'after'), 'product_type') AS product_type,
-    toDate(JSONExtractString(JSONExtractRaw(payload, 'after'), 'order_date')) AS order_date,
+    addDays(toDate('1970-01-01'), JSONExtractInt(JSONExtractRaw(payload, 'after'), 'order_date')) AS order_date,
     JSONExtractString(JSONExtractRaw(payload, 'after'), 'status') AS status,
     toDateTime(intDiv(JSONExtractUInt(payload, 'ts_ms'), 1000)) AS created_at,
     JSONExtractString(payload, 'op') AS _op
