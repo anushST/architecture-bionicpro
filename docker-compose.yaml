@@ -28,7 +28,7 @@ services:
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: keycloak_password
       KC_HOSTNAME_URL: http://localhost:8080
-      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "true"
     command:
       - start-dev
       - --import-realm
@@ -122,14 +122,25 @@ services:
     image: clickhouse/clickhouse-server:23.8
     ports:
       - "8123:8123"
-      - "9000:9000"
     volumes:
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./clickhouse/config.xml:/etc/clickhouse-server/config.d/listen.xml
       - clickhouse-data:/var/lib/clickhouse
     environment:
       CLICKHOUSE_DB: bionicpro
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: on-failure
 
   # ============================================================
   # Reports API
@@ -153,9 +164,12 @@ services:
       S3_BUCKET: reports
       CDN_BASE_URL: http://localhost:8081/reports
     depends_on:
-      - clickhouse
-      - keycloak
-      - minio
+      clickhouse:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      minio:
+        condition: service_started
 
   # ============================================================
   # Airflow (ETL)
@@ -184,6 +198,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: 'ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg='
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__WEBSERVER__SECRET_KEY: 'bionicpro-airflow-secret'
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
       CRM_DB_HOST: crm-db
       CRM_DB_PORT: 5432
       CRM_DB_NAME: crm
@@ -202,8 +217,8 @@ services:
       crm-db:
         condition: service_healthy
       clickhouse:
-        condition: service_started
-    command: bash -c "airflow db migrate && (airflow users delete --username admin 2>/dev/null || true) && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com && airflow webserver"
+        condition: service_healthy
+    command: bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com || true && airflow webserver"
 
   airflow-scheduler:
     build:
@@ -214,6 +229,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: 'ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg='
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
       CRM_DB_HOST: crm-db
       CRM_DB_PORT: 5432
       CRM_DB_NAME: crm
@@ -243,19 +259,12 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      sleep 5;
-      mc alias set local http://minio:9000 minioadmin minioadmin;
-      mc mb local/reports --ignore-existing;
-      mc anonymous set download local/reports;
-      exit 0;
-      "
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ============================================================
   # CDN (Nginx reverse proxy with caching)

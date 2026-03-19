@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 from config import settings
 
 _s3_client = None
+_bucket_ensured = False
 
 
 def get_s3_client():
@@ -22,6 +23,29 @@ def get_s3_client():
             region_name="us-east-1",
         )
     return _s3_client
+
+
+def ensure_bucket():
+    """Create the S3 bucket if it doesn't exist and set public read policy."""
+    global _bucket_ensured
+    if _bucket_ensured:
+        return
+    s3 = get_s3_client()
+    try:
+        s3.head_bucket(Bucket=settings.S3_BUCKET)
+    except ClientError:
+        s3.create_bucket(Bucket=settings.S3_BUCKET)
+        policy = json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"AWS": "*"},
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:aws:s3:::{settings.S3_BUCKET}/*"],
+            }],
+        })
+        s3.put_bucket_policy(Bucket=settings.S3_BUCKET, Policy=policy)
+    _bucket_ensured = True
 
 
 def _report_key(user_id: str) -> str:

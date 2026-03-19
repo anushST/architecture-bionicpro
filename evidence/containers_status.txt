@@ -1,0 +1,33 @@
+==============================================
+  ВСЕ КОНТЕЙНЕРЫ — 17 Up, 0 Exited
+  Дата: 2026-03-19
+==============================================
+
+NAME                                         STATUS                    PORTS
+architecture-bionicpro-airflow-postgres-1    Up 31 minutes (healthy)   5432/tcp
+architecture-bionicpro-airflow-scheduler-1   Up 23 minutes             8080/tcp
+architecture-bionicpro-airflow-webserver-1   Up 23 minutes             0.0.0.0:8082->8080/tcp
+architecture-bionicpro-bionicpro-auth-1      Up 30 minutes             0.0.0.0:8000->8000/tcp
+architecture-bionicpro-clickhouse-1          Up 31 minutes (healthy)   0.0.0.0:8123->8123/tcp
+architecture-bionicpro-crm-db-1              Up 31 minutes (healthy)   0.0.0.0:5434->5432/tcp
+architecture-bionicpro-debezium-1            Up 31 minutes             0.0.0.0:8083->8083/tcp
+architecture-bionicpro-frontend-1            Up 31 minutes             0.0.0.0:3000->3000/tcp
+architecture-bionicpro-kafka-1               Up 31 minutes             0.0.0.0:9092->9092/tcp
+architecture-bionicpro-keycloak-1            Up 30 minutes             0.0.0.0:8080->8080/tcp
+architecture-bionicpro-keycloak_db-1         Up 31 minutes (healthy)   0.0.0.0:5433->5432/tcp
+architecture-bionicpro-minio-1               Up 31 minutes (healthy)   0.0.0.0:9001->9001/tcp, 0.0.0.0:9002->9000/tcp
+architecture-bionicpro-nginx-cdn-1           Up 31 minutes             0.0.0.0:8081->8081/tcp
+architecture-bionicpro-openldap-1            Up 31 minutes             0.0.0.0:389->389/tcp, 0.0.0.0:636->636/tcp
+architecture-bionicpro-redis-1               Up 31 minutes             0.0.0.0:6379->6379/tcp
+architecture-bionicpro-reports-api-1         Up 30 minutes             0.0.0.0:8001->8001/tcp
+architecture-bionicpro-zookeeper-1           Up 31 minutes             0.0.0.0:2181->2181/tcp
+
+Healthcheck статусы:
+  clickhouse-1:       healthy
+  minio-1:            healthy
+  crm-db-1:           healthy
+  keycloak_db-1:      healthy
+  airflow-postgres-1: healthy
+
+Контейнера minio-init НЕТ — bucket создаётся автоматически.
+Контейнер clickhouse НЕ падает (был exit 70 — исправлено через listen_host: 0.0.0.0).

@@ -15,6 +15,15 @@ app = FastAPI(title="BionicPRO Reports API")
 _ch_client = None
 
 
+@app.on_event("startup")
+async def startup():
+    """Initialize S3 bucket on startup."""
+    try:
+        s3_cache.ensure_bucket()
+    except Exception as e:
+        print(f"Warning: Could not ensure S3 bucket: {e}")
+
+
 def get_ch_client():
     global _ch_client
     if _ch_client is None:
