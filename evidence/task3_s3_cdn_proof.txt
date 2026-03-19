@@ -1,0 +1,55 @@
+==============================================
+  ЗАДАНИЕ 3: S3 + CDN — ДОКАЗАТЕЛЬСТВА РАБОТЫ
+  Дата: 2026-03-19
+==============================================
+
+=== MinIO статус ===
+NAME                             STATUS
+architecture-bionicpro-minio-1   Up 30 minutes (healthy)
+
+Контейнера minio-init НЕТ — bucket создаётся автоматически в reports-api при старте.
+
+=== MinIO health ===
+curl http://localhost:9002/minio/health/live → OK
+
+=== S3 bucket 'reports' — содержимое ===
+  prothetic1/report.json    size=1824 bytes  modified=2026-03-19 09:21:49
+  prothetic2/report.json    size=1465 bytes  modified=2026-03-19 09:21:49
+
+=== CDN (Nginx) — prothetic1 ===
+curl -I http://localhost:8081/reports/prothetic1/report.json
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: public, max-age=3600
+
+Содержимое:
+[{"user_id": "prothetic1", "user_email": "prothetic1@example.com",
+  "device_id": "DEV-001-A", "product_name": "BionicHand Pro v3",
+  "order_date": "2024-06-05", "order_status": "delivered",
+  "total_usage_hours": 8.6, "total_active_movements": 1740,
+  "total_battery_cycles": 2, "avg_signal_strength": 0.91, ...}, ...]
+
+=== CDN (Nginx) — prothetic2 ===
+curl http://localhost:8081/reports/prothetic2/report.json → HTTP 200
+
+[{"user_id": "prothetic2", "user_email": "prothetic2@example.com",
+  "device_id": "DEV-002-B", "product_name": "BionicArm Elite v2",
+  "order_date": "2024-06-04", "order_status": "delivered",
+  "total_usage_hours": 20.4, ...}, ...]
+
+Данные prothetic1 (DEV-001-A) НЕ содержатся в отчёте prothetic2 — изоляция работает.
+
+=== Схема работы ===
+
+1. Пользователь нажимает Download Report в UI
+2. Frontend → BFF (/api/reports с session cookie)
+3. BFF → Reports API (с Bearer token)
+4. Reports API проверяет S3 cache:
+   - Если есть → возвращает {"source": "cache", "download_url": "http://localhost:8081/reports/user/report.json"}
+   - Если нет → запрашивает из ClickHouse, сохраняет в S3, возвращает {"source": "olap", "download_url": "..."}
+5. CDN (Nginx) отдаёт файл из MinIO S3 с кэшированием (max-age=3600)
+
+==============================================
+  RESULT: PASS
+==============================================

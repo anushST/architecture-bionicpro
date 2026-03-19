@@ -1,0 +1,104 @@
+==============================================
+  ЗАДАНИЕ 4: CDC — ДОКАЗАТЕЛЬСТВА РАБОТЫ
+  Дата: 2026-03-19
+==============================================
+
+=== 4.1 ClickHouse статус ===
+NAME                                  STATUS
+architecture-bionicpro-clickhouse-1   Up 29 minutes (healthy)
+
+ClickHouse версия: 23.8.16.16
+
+=== 4.2 Debezium connector status ===
+{
+    "name": "crm-connector",
+    "connector": {
+        "state": "RUNNING",
+        "worker_id": "172.19.0.13:8083"
+    },
+    "tasks": [
+        {
+            "id": 0,
+            "state": "RUNNING",
+            "worker_id": "172.19.0.13:8083"
+        }
+    ],
+    "type": "source"
+}
+
+=== 4.3 Kafka топики (созданы Debezium) ===
+crm.public.customers
+crm.public.orders
+crm.public.telemetry
+
+=== 4.4 Данные в ClickHouse staging tables (поступили через CDC) ===
+
+--- customers (3 записи из CRM через Debezium → Kafka → KafkaEngine → MV) ---
+┌─id─┬─keycloak_user_id─┬─email──────────────────┬─first_name─┬─last_name─┬──────────created_at─┬─_op─┐
+│  1 │ prothetic1       │ prothetic1@example.com │ Prothetic  │ One       │ 2026-03-19 09:22:35 │ r   │
+│  2 │ prothetic2       │ prothetic2@example.com │ Prothetic  │ Two       │ 2026-03-19 09:22:35 │ r   │
+│  3 │ prothetic3       │ prothetic3@example.com │ Prothetic  │ Three     │ 2026-03-19 09:22:35 │ r   │
+└────┴──────────────────┴────────────────────────┴────────────┴───────────┴─────────────────────┴─────┘
+
+_op = "r" означает "read" (snapshot) — начальный снимок данных из PostgreSQL
+
+--- orders (5 записей) ---
+┌─id─┬─customer_id─┬─product_name────────────────────────┬─status────────┬─order_date─┐
+│  1 │           1 │ BionicHand Pro v3                   │ delivered     │ 2024-01-15 │
+│  2 │           1 │ BionicHand Pro v3 - Maintenance Kit │ delivered     │ 2024-06-10 │
+│  3 │           2 │ BionicArm Elite v2                  │ delivered     │ 2024-02-20 │
+│  4 │           3 │ BionicHand Lite v1                  │ delivered     │ 2024-03-10 │
+│  5 │           3 │ BionicHand Pro v3                   │ in_production │ 2024-09-01 │
+└────┴─────────────┴─────────────────────────────────────┴───────────────┴────────────┘
+
+--- telemetry (14 записей до теста, 12 начальных + 2 добавленных ранее) ---
+
+=== 4.5 Real-time CDC тест ===
+
+INSERT INTO telemetry (device_id, customer_id, signal_strength, usage_hours,
+  active_movements, battery_cycles, error_count, recorded_at)
+VALUES ('DEV-TEST-X', 1, 0.99, 1.0, 100, 1, 0, NOW());
+
+Count BEFORE: 14
+(ожидание 10 секунд для пропагации через Debezium → Kafka → ClickHouse)
+Count AFTER:  15
+
+--- Новая запись появилась в ClickHouse (real-time CDC) ---
+┌─id─┬─device_id──┬─customer_id─┬─signal_strength─┬─usage_hours─┬─active_movements─┬─────────recorded_at─┐
+│ 15 │ DEV-TEST-X │           1 │            0.99 │           1 │              100 │ 2026-03-19 09:40:59 │
+└────┴────────────┴─────────────┴─────────────────┴─────────────┴──────────────────┴─────────────────────┘
+
+=== 4.6 Таблицы в ClickHouse (bionicpro) ===
+customers         — staging, данные из CDC
+orders            — staging, данные из CDC
+telemetry         — staging, данные из CDC
+kafka_customers   — Kafka Engine (consumer из crm.public.customers)
+kafka_orders      — Kafka Engine (consumer из crm.public.orders)
+kafka_telemetry   — Kafka Engine (consumer из crm.public.telemetry)
+mv_customers      — MaterializedView: kafka_customers → customers
+mv_orders         — MaterializedView: kafka_orders → orders
+mv_telemetry      — MaterializedView: kafka_telemetry → telemetry
+reports           — заполняется Airflow ETL
+report_datamart   — витрина отчётности
+etl_metadata      — метаданные ETL
+
+=== Архитектура CDC pipeline ===
+
+PostgreSQL (CRM)
+    ↓ WAL (logical replication)
+Debezium Connector (crm-connector: RUNNING)
+    ↓ JSON events
+Kafka Topics (crm.public.customers, crm.public.orders, crm.public.telemetry)
+    ↓ consumed by
+ClickHouse Kafka Engine (kafka_customers, kafka_orders, kafka_telemetry)
+    ↓ parsed by
+Materialized Views (mv_customers, mv_orders, mv_telemetry)
+    ↓ inserted into
+Staging Tables (customers, orders, telemetry)
+    ↓ used by
+Reports API → /reports endpoint
+
+==============================================
+  RESULT: PASS — real-time CDC работает
+  14 → 15 записей за 10 секунд
+==============================================
